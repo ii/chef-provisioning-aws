@@ -19,7 +19,7 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
   # The comment included in the CreateHostedZoneRequest element. String <= 256 characters.
   attribute :comment, kind_of: String
 
-  attribute :aws_route_53_zone_id, kind_of: String, aws_id_attribute: true
+  attribute :aws_route53_zone_id, kind_of: String, aws_id_attribute: true
 
   # If you want to associate a reusable delegation set with this hosted zone, the ID that Amazon Route 53
   # assigned to the reusable delegation set when you created it. For more information about reusable
@@ -73,8 +73,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       }
 
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
-      puts "\nHosted zone ID (#{new_resource.name}): #{zone.id}"
-      new_resource.aws_route_53_zone_id(zone.id)
+      new_resource.aws_route53_zone_id(zone.id)
       zone
     end
   end

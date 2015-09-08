@@ -8,12 +8,24 @@ describe Chef::Resource::AwsRoute53HostedZone do
 
       let(:zone_name) { "aws-spec-#{Time.now.to_i}.com." }
 
-      it "aws_route53_hosted_zone :create creates a Route 53 hosted zone" do
+      it "aws_route53_hosted_zone :create creates a Route 53 hosted zone without attributes" do
         expect_recipe {
           aws_route53_hosted_zone zone_name do
             action :create
+            # comment "Surely this isn't required."
           end
-        }.to create_an_aws_route53_hosted_zone(zone_name) #.and be_idempotent
+        }.to create_an_aws_route53_hosted_zone(zone_name).and be_idempotent
+      end
+
+      it "aws_route53_hosted_zone :create creates a Route 53 hosted zone with attributes" do
+        test_comment = "Test comment for spec."
+
+        expect_recipe {
+          aws_route53_hosted_zone zone_name do
+            action :create
+            comment test_comment
+          end
+        }.to create_an_aws_route53_hosted_zone(zone_name, config: { comment: test_comment }).and be_idempotent
       end
     end
   end

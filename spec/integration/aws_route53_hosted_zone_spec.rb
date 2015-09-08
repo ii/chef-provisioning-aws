@@ -25,7 +25,9 @@ describe Chef::Resource::AwsRoute53HostedZone do
             action :create
             comment test_comment
           end
-        }.to create_an_aws_route53_hosted_zone(zone_name, config: { comment: test_comment }).and be_idempotent
+        }.to create_an_aws_route53_hosted_zone(zone_name,
+                                               config: { comment: test_comment }
+                                               ).and be_idempotent
       end
     end
   end

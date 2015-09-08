@@ -19,6 +19,8 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
   # The comment included in the CreateHostedZoneRequest element. String <= 256 characters.
   attribute :comment, kind_of: String
 
+  attribute :private_zone, kind_of: [TrueClass, FalseClass]
+
   attribute :aws_route53_zone_id, kind_of: String, aws_id_attribute: true
 
   # If you want to associate a reusable delegation set with this hosted zone, the ID that Amazon Route 53
@@ -59,18 +61,34 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   #   },
   #   delegation_set_id: "ResourceId",
   # })
+
+  def make_hosted_zone_config(new_resource)
+    config = {}
+    # add :private_zone here once validation is enabled.
+    [:comment].each do |attr|
+      value = new_resource.send(attr)
+      if value
+        config[attr] = value
+      end
+    end
+    config
+  end
+
   def create_aws_object
 
     converge_by "create new Route 53 zone #{new_resource}" do
 
-      # AWS stores the comment off to the side here.
-      hosted_zone_config = new_resource.comment ? { comment: new_resource.comment } : {}
+      # AWS stores some attributes off to the side here.
+      hosted_zone_config = make_hosted_zone_config(new_resource)
 
       values = {
         name: new_resource.name,
         hosted_zone_config: hosted_zone_config,
-        caller_reference: "chef-provisioning-aws-#{SecureRandom.uuid.upcase}",  # required
+        caller_reference: "chef-provisioning-aws-#{SecureRandom.uuid.upcase}",  # required, unique each call
       }
+
+      # a "private" zone must have a VPC associated, *and* from the UI it looks like the VPC must have
+      # 'enableDnsHostnames' and 'enableDnsSupport' both set to true. see docs: http://redirx.me/?t3zr
 
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)

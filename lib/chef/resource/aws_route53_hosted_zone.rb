@@ -62,11 +62,13 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   def create_aws_object
 
     converge_by "create new Route 53 zone #{new_resource}" do
+
+      # AWS stores the comment off to the side here.
+      hosted_zone_config = new_resource.comment ? { comment: new_resource.comment } : {}
+
       values = {
         name: new_resource.name,
-        hosted_zone_config: {
-          comment: new_resource.comment,
-        },
+        hosted_zone_config: hosted_zone_config,
         caller_reference: "chef-provisioning-aws-#{SecureRandom.uuid.upcase}",  # required
       }
 

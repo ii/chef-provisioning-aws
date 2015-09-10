@@ -1,12 +1,61 @@
 require 'chef/provisioning/aws_driver/aws_resource'
-require 'chef/resource/aws_subnet'
-require 'chef/resource/aws_eip_address'
 
 require 'securerandom'
 
+class RecordSet
+  include Chef::Mixin::ParamsValidate
+
+  def self.validation_map
+    @@validation_map
+  end
+
+  def self.attribute(name, map)
+    attr name.to_sym
+
+    # we have an idiom for this, find it.
+    @@validation_map ||= {}
+    @@validation_map[name] = map
+
+    @@hash_attrs ||= []
+    @@hash_attrs << name
+  end
+
+  def self.validate_recordsets(record_sets)
+    record_sets.map { |rs| RecordSet.new(rs) }
+    true
+  end
+
+  attribute :aws_hosted_zone_id, kind_of: String, required: true
+
+  attribute :type, equal_to: %w(SOA A TXT NS CNAME MX PTR SRV SPF AAAA), required: true
+  attribute :set_identifier, kind_of: String
+  attribute :weight, kind_of: Fixnum
+  attribute :region, equal_to: Chef::Provisioning::AWSDriver::AWSResource::AWS_REGIONS
+  attribute :geo_location, kind_of: Hash  # keys: [continent_code, country_code, subdivision_code]
+  attribute :failover, equal_to: ["PRIMARY", "SECONDARY"]
+  # attribute :resource_records, kind_of: Array  # ??
+  attribute :alias_target, kind_of: Hash, required: true, callbacks: lambda { |param| true }
+  attribute :health_check_id, kind_of: String
+
+  def initialize(args={})
+    validate(args, self.class.validation_map)
+    @args.each do |k, v|
+      self.send(k.to_sym, v) if self.respond_to?(k.to_sym)
+    end
+  end
+
+  def to_hash
+    ret = {}
+    @@hash_attrs.each do |att|
+      value = @values[att]
+      ret[att] = value if value
+    end
+    ret
+  end
+end
+
 class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSResourceWithEntry
 
-  # :id is not actually :name, it's the ID provided by AWS
   aws_sdk_type ::Aws::Route53::Types::HostedZone, load_provider: false
 
   # silence deprecations--since provisioning figures out the resource name itself, it seems like it could do
@@ -22,6 +71,8 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
   attribute :private_zone, kind_of: [TrueClass, FalseClass]
 
   attribute :aws_route53_zone_id, kind_of: String, aws_id_attribute: true
+
+  attribute :record_sets, kind_of: Array, callbacks: lambda { |p| RecordSet.validate_recordsets(p) }
 
   # If you want to associate a reusable delegation set with this hosted zone, the ID that Amazon Route 53
   # assigned to the reusable delegation set when you created it. For more information about reusable

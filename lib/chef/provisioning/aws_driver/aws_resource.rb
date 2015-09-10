@@ -7,6 +7,10 @@ require 'chef/provisioning/aws_driver/aws_taggable'
 # Common AWS resource - contains metadata that all AWS resources will need
 module Chef::Provisioning::AWSDriver
 class AWSResource < Chef::Provisioning::AWSDriver::SuperLWRP
+
+  AWS_REGIONS = %q(us-east-1 us-west-1 us-west-2 eu-west-1 eu-central-1 ap-southeast-1
+                   ap-southeast-2 ap-northeast-1 sa-east-1 cn-north-1)
+
   actions :create, :destroy, :purge, :nothing
   default_action :create
 

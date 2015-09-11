@@ -4,7 +4,7 @@ require 'chef/provisioning/aws_driver'
 
 with_driver 'aws::us-east-1'
 
-zone_name = "cdoherty-aws-development-delete-me.com."
+zone_name = "cdoherty-aws-development-delete-me.com"
 
 # aws_route53_hosted_zone zone_name do
 #   action :destroy
@@ -18,7 +18,7 @@ rs = [ # required
       resource_record_set: { # required
         name: "some-api-host.#{zone_name}", # required
         type: "CNAME", # required, accepts SOA, A, TXT, NS, CNAME, MX, PTR, SRV, SPF, AAAA
-        ttl: 1,
+        ttl: 3600,
         resource_records: [
           {
             value: "some-other-host.example.com.", # required

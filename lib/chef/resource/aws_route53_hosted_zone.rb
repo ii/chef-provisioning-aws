@@ -29,7 +29,17 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
   end
 end
 
+$rrs_global ||= []
+
 class Chef::Resource::RecordSet < Chef::Resource::LWRPBase
+
+  def initialize(*args)
+    $rrs_global << self
+    super(*args)
+  end
+
+  actions :nothing
+  resource_name :aws_route53_recordset
   attribute :aws_hosted_zone_id, kind_of: String, required: true
 
   # if you add the trailing dot yourself, you get "FATAL problem: DomainLabelEmpty encountered"
@@ -37,10 +47,17 @@ class Chef::Resource::RecordSet < Chef::Resource::LWRPBase
   attribute :value, required: true   # may not be required.
   attribute :type, equal_to: %w(SOA A TXT NS CNAME MX PTR SRV SPF AAAA), required: true
   attribute :ttl, kind_of: Fixnum, required: true
+  attribute :resource_records, kind_of: Array
+  attribute :hosted_zone_name, kind_of: String
 
   def validate_required!
     [:rr_name, :value, :type, :ttl].each { |f| self.send(f) }
   end
+end
+
+def in_aws_route53_hosted_zone(zone_name, &block)
+  rs = yield(zone_name)
+  require 'pry'; binding.pry
 end
 
 class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSProvider

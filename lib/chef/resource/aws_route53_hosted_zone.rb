@@ -37,6 +37,10 @@ class Chef::Resource::RecordSet < Chef::Resource::LWRPBase
   attribute :value, required: true   # may not be required.
   attribute :type, equal_to: %w(SOA A TXT NS CNAME MX PTR SRV SPF AAAA), required: true
   attribute :ttl, kind_of: Fixnum, required: true
+
+  def validate_required!
+    [:rr_name, :value, :type, :ttl].each { |f| self.send(f) }
+  end
 end
 
 class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSProvider
@@ -90,11 +94,11 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
     new_resource.record_sets.map { |r| r[:resource_record_set] }.each do |raw_rs|
       rs = Chef::Resource::RecordSet.new("#{raw_rs[:name]} #{raw_rs[:type]}").tap do |resource|
         resource.rr_name(raw_rs[:name])
-        resource.value(raw_rs[:resource_records][0][:value])
         resource.type(raw_rs[:type])
-        # resource.ttl(raw_rs[:ttl])
+        resource.value(raw_rs[:resource_records][0][:value])
+        resource.ttl(raw_rs[:ttl])
       end
-      require 'pry'; binding.pry
+      rs.validate_required!
     end
     # change_record_sets(new_resource, hosted_zone)
   end

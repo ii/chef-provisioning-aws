@@ -1,5 +1,5 @@
 require 'chef/provisioning/aws_driver/aws_resource'
-require 'record_set'
+require 'chef/resource/aws_route53_record_set'
 require 'securerandom'
 
 class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSResourceWithEntry
@@ -16,11 +16,14 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
 
   attribute :aws_route53_zone_id, kind_of: String, aws_id_attribute: true
 
-  attribute :record_sets, kind_of: Array #, callbacks: lambda { |p| RecordSet.get_recordsets(p) }
-
-  # private_zone can only be set if a VPC is attached.
-  # attribute :private_zone, kind_of: [TrueClass, FalseClass]
-  # attribute :vpcs
+  def record_sets(&block)
+    if block_given?
+      node.default[:aws_route53_recordsets] = []
+      @record_sets_block = block
+    else
+      @record_sets_block
+    end
+  end
 
   def aws_object
     driver, id = get_driver_and_id
@@ -29,41 +32,12 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
   end
 end
 
-$rrs_global ||= []
-
-class Chef::Resource::RecordSet < Chef::Resource::LWRPBase
-
-  def initialize(*args)
-    $rrs_global << self
-    super(*args)
-  end
-
-  actions :nothing
-  resource_name :aws_route53_recordset
-  attribute :aws_hosted_zone_id, kind_of: String, required: true
-
-  # if you add the trailing dot yourself, you get "FATAL problem: DomainLabelEmpty encountered"
-  attribute :rr_name, required: true, callbacks: { "cannot end with a dot" => lambda { |n| n !~ /\.$/ }}
-  attribute :value, required: true   # may not be required.
-  attribute :type, equal_to: %w(SOA A TXT NS CNAME MX PTR SRV SPF AAAA), required: true
-  attribute :ttl, kind_of: Fixnum, required: true
-  attribute :resource_records, kind_of: Array
-  attribute :hosted_zone_name, kind_of: String
-
-  def validate_required!
-    [:rr_name, :value, :type, :ttl].each { |f| self.send(f) }
-  end
-end
-
-def in_aws_route53_hosted_zone(zone_name, &block)
-  rs = yield(zone_name)
-  require 'pry'; binding.pry
-end
-
 class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSProvider
 
   provides :aws_route53_hosted_zone
   use_inline_resources
+
+  attr :record_set_list
 
   def make_hosted_zone_config(new_resource)
     config = {}
@@ -95,29 +69,32 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
-      change_record_sets(new_resource, zone)
+
+      process_record_sets(run_context.resource_collection, new_resource, zone)
 
       zone
     end
   end
 
+  def process_record_sets(record_sets, new_resource, hosted_zone)
+    return unless record_sets
+
+    record_sets.each do |rs|
+      rs.validate!
+    end
+    record_set_list = record_sets.to_a
+  end
+
   def update_aws_object(hosted_zone)
+    instance_eval(&new_resource.record_sets)
+
+    process_record_sets(run_context.resource_collection, new_resource, hosted_zone)
+
     if new_resource.comment != hosted_zone.config.comment
       converge_by "update Route 53 zone #{new_resource}" do
         new_resource.driver.route53_client.update_hosted_zone_comment(id: hosted_zone.id, comment: new_resource.comment)
       end
     end
-
-    new_resource.record_sets.map { |r| r[:resource_record_set] }.each do |raw_rs|
-      rs = Chef::Resource::RecordSet.new("#{raw_rs[:name]} #{raw_rs[:type]}").tap do |resource|
-        resource.rr_name(raw_rs[:name])
-        resource.type(raw_rs[:type])
-        resource.value(raw_rs[:resource_records][0][:value])
-        resource.ttl(raw_rs[:ttl])
-      end
-      rs.validate_required!
-    end
-    # change_record_sets(new_resource, hosted_zone)
   end
 
   def change_record_sets(new_resource, zone)
@@ -130,7 +107,6 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
                                                                         comment: "Change the RRs",
                                                                         changes: new_resource.record_sets,
                                                                         })
-        require 'pry'; binding.pry
       rescue StandardError => ex
         # puts "\n"
         # Chef::Log.warn "#{ex.class}: #{ex.message}"

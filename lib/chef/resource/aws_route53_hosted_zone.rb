@@ -1,93 +1,26 @@
 require 'chef/provisioning/aws_driver/aws_resource'
-
+require 'record_set'
 require 'securerandom'
-
-class RecordSet
-  include Chef::Mixin::ParamsValidate
-
-  def self.validation_map
-    @@validation_map
-  end
-
-  def self.attribute(name, map)
-    attr name.to_sym
-
-    # we have an idiom for this, find it.
-    @@validation_map ||= {}
-    @@validation_map[name] = map
-
-    @@hash_attrs ||= []
-    @@hash_attrs << name
-  end
-
-  def self.validate_recordsets(record_sets)
-    record_sets.map { |rs| RecordSet.new(rs) }
-    true
-  end
-
-  attribute :aws_hosted_zone_id, kind_of: String, required: true
-
-  attribute :type, equal_to: %w(SOA A TXT NS CNAME MX PTR SRV SPF AAAA), required: true
-  attribute :set_identifier, kind_of: String
-  attribute :weight, kind_of: Fixnum
-  attribute :region, equal_to: Chef::Provisioning::AWSDriver::AWSResource::AWS_REGIONS
-  attribute :geo_location, kind_of: Hash  # keys: [continent_code, country_code, subdivision_code]
-  attribute :failover, equal_to: ["PRIMARY", "SECONDARY"]
-  # attribute :resource_records, kind_of: Array  # ??
-  attribute :alias_target, kind_of: Hash, required: true, callbacks: lambda { |param| true }
-  attribute :health_check_id, kind_of: String
-
-  def initialize(args={})
-    validate(args, self.class.validation_map)
-    @args.each do |k, v|
-      self.send(k.to_sym, v) if self.respond_to?(k.to_sym)
-    end
-  end
-
-  def to_hash
-    ret = {}
-    @@hash_attrs.each do |att|
-      value = @values[att]
-      ret[att] = value if value
-    end
-    ret
-  end
-end
 
 class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSResourceWithEntry
 
   aws_sdk_type ::Aws::Route53::Types::HostedZone, load_provider: false
 
-  # silence deprecations--since provisioning figures out the resource name itself, it seems like it could do
-  # this, too...
   resource_name :aws_route53_hosted_zone
 
-  # name of the domain.
+  # name of the domain. unlike the RR name, this can (must?) have a trailing dot.
   attribute :name, kind_of: String, name_attribute: true
 
   # The comment included in the CreateHostedZoneRequest element. String <= 256 characters.
   attribute :comment, kind_of: String
 
-  attribute :private_zone, kind_of: [TrueClass, FalseClass]
-
   attribute :aws_route53_zone_id, kind_of: String, aws_id_attribute: true
 
-  attribute :record_sets, kind_of: Array, callbacks: lambda { |p| RecordSet.validate_recordsets(p) }
+  attribute :record_sets, kind_of: Array #, callbacks: lambda { |p| RecordSet.get_recordsets(p) }
 
-  # If you want to associate a reusable delegation set with this hosted zone, the ID that Amazon Route 53
-  # assigned to the reusable delegation set when you created it. For more information about reusable
-  # delegation sets, see Actions on Reusable Delegation Sets.
-  # This is unimplemented pending a strong use case.
-  # attribute :delegation_set_id
-
-  # A complex type that contains information about the Amazon VPC that you're associating with this hosted
-  # zone.
-  # You can specify only one Amazon VPC when you create a private hosted zone. To associate additional Amazon
-  # VPC with the hosted zone, use POST AssociateVPCWithHostedZone after you create a hosted zone.
-  # 1. name of a Chef VPC resource.
-  # 2. a Chef VPC resource.
-  # 3. an AWS::EC2::VPC.
-  attribute :vpcs
+  # private_zone can only be set if a VPC is attached.
+  # attribute :private_zone, kind_of: [TrueClass, FalseClass]
+  # attribute :vpcs
 
   def aws_object
     driver, id = get_driver_and_id
@@ -96,22 +29,20 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
   end
 end
 
-class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSProvider
-  provides :aws_route53_hosted_zone
+class Chef::Resource::RecordSet < Chef::Resource::LWRPBase
+  attribute :aws_hosted_zone_id, kind_of: String, required: true
 
-  # resp = client.create_hosted_zone({
-  #   name: "DNSName", # required
-  #   vpc: {
-  #     vpc_region: "us-east-1", # accepts us-east-1, us-west-1, us-west-2, eu-west-1, eu-central-1, ap-southeast-1, ap-southeast-2, ap-northeast-1, sa-east-1, cn-north-1
-  #     vpc_id: "VPCId",
-  #   },
-  #   caller_reference: "Nonce", # required
-  #   hosted_zone_config: {
-  #     comment: "ResourceDescription",
-  #     private_zone: true,
-  #   },
-  #   delegation_set_id: "ResourceId",
-  # })
+  # if you add the trailing dot yourself, you get "FATAL problem: DomainLabelEmpty encountered"
+  attribute :rr_name, required: true, callbacks: { "cannot end with a dot" => lambda { |n| n !~ /\.$/ }}
+  attribute :value, required: true   # may not be required.
+  attribute :type, equal_to: %w(SOA A TXT NS CNAME MX PTR SRV SPF AAAA), required: true
+  attribute :ttl, kind_of: Fixnum, required: true
+end
+
+class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSProvider
+
+  provides :aws_route53_hosted_zone
+  use_inline_resources
 
   def make_hosted_zone_config(new_resource)
     config = {}
@@ -143,6 +74,8 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
+      change_record_sets(new_resource, zone)
+
       zone
     end
   end
@@ -151,6 +84,36 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
     if new_resource.comment != hosted_zone.config.comment
       converge_by "update Route 53 zone #{new_resource}" do
         new_resource.driver.route53_client.update_hosted_zone_comment(id: hosted_zone.id, comment: new_resource.comment)
+      end
+    end
+
+    new_resource.record_sets.map { |r| r[:resource_record_set] }.each do |raw_rs|
+      rs = Chef::Resource::RecordSet.new("#{raw_rs[:name]} #{raw_rs[:type]}").tap do |resource|
+        resource.rr_name(raw_rs[:name])
+        resource.value(raw_rs[:resource_records][0][:value])
+        resource.type(raw_rs[:type])
+        # resource.ttl(raw_rs[:ttl])
+      end
+      require 'pry'; binding.pry
+    end
+    # change_record_sets(new_resource, hosted_zone)
+  end
+
+  def change_record_sets(new_resource, zone)
+    if new_resource.record_sets
+      # rs_param = RecordSet.get_recordsets(new_resource.record_sets).map { |rs| rs.to_hash }
+      Chef::Log.warn "attempting to submit RR: #{new_resource.record_sets}"
+      begin
+        result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: zone.id,
+                                                                       change_batch: {
+                                                                        comment: "Change the RRs",
+                                                                        changes: new_resource.record_sets,
+                                                                        })
+        require 'pry'; binding.pry
+      rescue StandardError => ex
+        # puts "\n"
+        # Chef::Log.warn "#{ex.class}: #{ex.message}"
+        raise
       end
     end
   end

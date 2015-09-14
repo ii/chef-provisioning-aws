@@ -2,13 +2,18 @@ require 'chef/provisioning/aws_driver/aws_resource'
 require 'chef/resource/aws_route53_record_set'
 require 'securerandom'
 
+# the AWS API doesn't have these objects linked, so give it some help.
+class Aws::Route53::Types::HostedZone
+  attr_accessor :resource_record_sets
+end
+
 class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSResourceWithEntry
 
   aws_sdk_type ::Aws::Route53::Types::HostedZone, load_provider: false
 
   resource_name :aws_route53_hosted_zone
 
-  # name of the domain. unlike the RR name, this can (must?) have a trailing dot.
+  # name of the domain. unlike an RR name, this can (must?) have a trailing dot.
   attribute :name, kind_of: String, name_attribute: true
 
   # The comment included in the CreateHostedZoneRequest element. String <= 256 characters.
@@ -28,7 +33,17 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
   def aws_object
     driver, id = get_driver_and_id
     result = driver.route53_client.get_hosted_zone(id: id).hosted_zone if id rescue nil
-    result || nil
+    if result
+      result.resource_record_sets = get_record_sets_from_aws(result.id).resource_record_sets
+      result
+    else
+      nil
+    end
+  end
+
+  def get_record_sets_from_aws(hosted_zone_id, opts={})
+    params = { hosted_zone_id: hosted_zone_id }.merge(opts)
+    driver.route53_client.list_resource_record_sets(params)
   end
 end
 
@@ -37,7 +52,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   provides :aws_route53_hosted_zone
   use_inline_resources
 
-  attr :record_set_list
+  attr_accessor :record_set_list
 
   def make_hosted_zone_config(new_resource)
     config = {}
@@ -70,25 +85,15 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
 
-      process_record_sets(run_context.resource_collection, new_resource, zone)
+      # record_set_list = get_record_sets_from_resource(new_resource, zone)
+      # change_record_sets(new_resource, record_set_list)
 
       zone
     end
   end
 
-  def process_record_sets(record_sets, new_resource, hosted_zone)
-    return unless record_sets
-
-    record_sets.each do |rs|
-      rs.validate!
-    end
-    record_set_list = record_sets.to_a
-  end
-
   def update_aws_object(hosted_zone)
-    instance_eval(&new_resource.record_sets)
-
-    process_record_sets(run_context.resource_collection, new_resource, hosted_zone)
+    # record_set_list = get_record_sets_from_resource(new_resource, hosted_zone)
 
     if new_resource.comment != hosted_zone.config.comment
       converge_by "update Route 53 zone #{new_resource}" do
@@ -97,27 +102,70 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
     end
   end
 
-  def change_record_sets(new_resource, zone)
-    if new_resource.record_sets
-      # rs_param = RecordSet.get_recordsets(new_resource.record_sets).map { |rs| rs.to_hash }
-      Chef::Log.warn "attempting to submit RR: #{new_resource.record_sets}"
-      begin
-        result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: zone.id,
-                                                                       change_batch: {
-                                                                        comment: "Change the RRs",
-                                                                        changes: new_resource.record_sets,
-                                                                        })
-      rescue StandardError => ex
-        # puts "\n"
-        # Chef::Log.warn "#{ex.class}: #{ex.message}"
-        raise
-      end
-    end
-  end
-
   def destroy_aws_object(hosted_zone)
+
+    if purging
+      rr_changes = hosted_zone.resource_record_sets.reject { |aws_rr|
+        %w{SOA NS}.include?(aws_rr.type)
+        }.map { |aws_rr|
+          {
+            action: "DELETE",
+            resource_record_set: {
+              name: aws_rr.name,
+              type: aws_rr.type,
+              ttl: aws_rr.ttl,
+              resource_records: [aws_rr.resource_records.map {|r| [:value, r.value]}.to_h],
+            }
+          }
+        }
+
+      aws_struct = {
+        hosted_zone_id: hosted_zone.id,
+        change_batch: {
+          comment: "Purging RRs prior to deleting resource",
+          changes: rr_changes,
+        }
+      }
+      new_resource.driver.route53_client.change_resource_record_sets(aws_struct)
+      require 'pry'; binding.pry
+    end
+
     converge_by "delete Route53 zone #{new_resource}" do
       result = new_resource.driver.route53_client.delete_hosted_zone(id: hosted_zone.id)
     end
   end
+
+  def get_record_sets_from_resource(new_resource, hosted_zone)
+    instance_eval(&new_resource.record_sets)
+
+    # pretty fuzzy on whether this is right or why it seems to work.
+    record_sets = run_context.resource_collection.to_a
+    return unless record_sets
+
+    record_sets.each do |rs|
+      rs.validate!
+    end
+
+    Chef::Resource::AwsRoute53RecordSet.verify_unique!(record_sets)
+    record_sets
+  end
+
+  def change_record_sets(new_resource, record_set_list)
+    Chef::Log.warn "attempting to submit RR: #{new_resource.record_sets}"
+    aws_struct = record_set_list.map { |rs| rs.to_aws_struct }
+    require 'pry'; binding.pry
+
+    begin
+      result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                              change_batch: {
+                                                                               comment: "Change the RRs",
+                                                                               changes: aws_struct,
+                                                                               })
+    rescue StandardError => ex
+        # puts "\n"
+        # Chef::Log.warn "#{ex.class}: #{ex.message}"
+      raise
+    end
+  end
+
 end

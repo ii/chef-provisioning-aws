@@ -7,6 +7,19 @@ class Aws::Route53::Types::HostedZone
   attr_accessor :resource_record_sets
 end
 
+# the API doesn't seem to provide any facility to convert these types into the data structures used by the
+# API; see http://redirx.me/?t3za for the RecordSet type specifically.
+class Aws::Route53::Types::RecordSet
+  def to_change_struct
+    {
+      name: name,
+      type: type,
+      ttl: ttl,
+      resource_records: [resource_records.map {|r| [:value, r.value]}.to_h],
+    }
+  end
+end
+
 class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSResourceWithEntry
 
   aws_sdk_type ::Aws::Route53::Types::HostedZone, load_provider: false
@@ -105,6 +118,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   def destroy_aws_object(hosted_zone)
 
     if purging
+      Chef::Log.info("Deleting all non-SOA/NS records for #{hosted_zone.name}")
       rr_changes = hosted_zone.resource_record_sets.reject { |aws_rr|
         %w{SOA NS}.include?(aws_rr.type)
         }.map { |aws_rr|
@@ -118,16 +132,17 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
             }
           }
         }
-
-      aws_struct = {
-        hosted_zone_id: hosted_zone.id,
-        change_batch: {
-          comment: "Purging RRs prior to deleting resource",
-          changes: rr_changes,
+      if rr_changes.size > 0
+        aws_struct = {
+          hosted_zone_id: hosted_zone.id,
+          change_batch: {
+            comment: "Purging RRs prior to deleting resource",
+            changes: rr_changes,
+          }
         }
-      }
-      new_resource.driver.route53_client.change_resource_record_sets(aws_struct)
-      require 'pry'; binding.pry
+
+        new_resource.driver.route53_client.change_resource_record_sets(aws_struct)
+      end
     end
 
     converge_by "delete Route53 zone #{new_resource}" do

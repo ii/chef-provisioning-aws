@@ -22,7 +22,6 @@ class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
   def to_aws_struct(new_action=nil)
     # there are more elements which are optional, notably 'weight' and 'region': see the API doc at
     # http://redirx.me/?t3zo
-    require 'pry'; binding.pry
     aws_action = new_action || if action.first == :create
       "UPSERT"
     else

@@ -98,8 +98,10 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
 
-      # record_set_list = get_record_sets_from_resource(new_resource, zone)
-      # change_record_sets(new_resource, record_set_list)
+      record_set_list = get_record_sets_from_resource(new_resource, zone)
+      if record_set_list
+        change_record_sets(new_resource, record_set_list)
+      end
 
       zone
     end
@@ -155,7 +157,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
     # pretty fuzzy on whether this is right or why it seems to work.
     record_sets = run_context.resource_collection.to_a
-    return unless record_sets
+    return nil unless record_sets
 
     record_sets.each do |rs|
       rs.validate!
@@ -166,14 +168,14 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   end
 
   def change_record_sets(new_resource, record_set_list)
-    Chef::Log.warn "attempting to submit RR: #{new_resource.record_sets}"
-    aws_struct = record_set_list.map { |rs| rs.to_aws_struct }
-    require 'pry'; binding.pry
+    Chef::Log.warn "attempting to submit RR: #{new_resource.record_set_list}"
+    aws_struct = record_set_list.map { |rs| rs.to_aws_struct("UPSERT") }
+    puts "\n#{aws_struct}"
 
     begin
       result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
                                                                               change_batch: {
-                                                                               comment: "Change the RRs",
+                                                                               comment: "Managed by Chef",
                                                                                changes: aws_struct,
                                                                                })
     rescue StandardError => ex

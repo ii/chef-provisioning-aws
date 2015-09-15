@@ -36,7 +36,6 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
 
   def record_sets(&block)
     if block_given?
-      node.default[:aws_route53_recordsets] = []
       @record_sets_block = block
     else
       @record_sets_block
@@ -92,16 +91,13 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
         caller_reference: "chef-provisioning-aws-#{SecureRandom.uuid.upcase}",  # required, unique each call
       }
 
-      # a "private" zone must have a VPC associated, *and* from the UI it looks like the VPC must have
-      # 'enableDnsHostnames' and 'enableDnsSupport' both set to true. see docs: http://redirx.me/?t3zr
-
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
 
-      record_set_list = get_record_sets_from_resource(new_resource, zone)
+      record_set_resources = get_record_sets_from_resource(new_resource, zone)
 
-      if record_set_list
-        change_record_sets(new_resource, record_set_list)
+      if record_set_resources
+        write_record_sets(new_resource, record_set_resources, :create)
       end
 
       zone
@@ -156,21 +152,29 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
     instance_eval(&new_resource.record_sets)
 
     # pretty fuzzy on whether this is right or why it seems to work.
-    record_sets = run_context.resource_collection.to_a
-    return nil unless record_sets
+    record_set_resources = run_context.resource_collection.to_a
+    return nil unless record_set_resources
 
-    record_sets.each do |rs|
+    record_set_resources.each do |rs|
       rs.validate!
     end
 
-    Chef::Resource::AwsRoute53RecordSet.verify_unique!(record_sets)
-    record_sets
+    Chef::Resource::AwsRoute53RecordSet.verify_unique!(record_set_resources)
+    record_set_resources
   end
 
-  def change_record_sets(new_resource, record_set_list)
-    return
-    Chef::Log.warn "attempting to submit RR: #{new_resource.record_set_list}"
-    aws_struct = record_set_list.map { |rs| rs.to_aws_struct("UPSERT") }
+  def write_record_sets(new_resource, record_set_resources, action)
+    Chef::Log.warn "attempting to submit RR: #{new_resource.record_set_resources}"
+    verb = case action
+              when :create
+                "CREATE"
+              when :update
+                "UPSERT"
+              else
+                raise ArgumentError("Invalid action '#{action}' passed to write_record_sets")
+              end
+
+    aws_struct = record_set_resources.map { |rs| rs.to_aws_struct("UPSERT") }
     puts "\n#{aws_struct}"
 
     begin

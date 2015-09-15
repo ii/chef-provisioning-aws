@@ -64,6 +64,9 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   provides :aws_route53_hosted_zone
   use_inline_resources
 
+  CREATE = "CREATE"
+  UPDATE = "UPSERT"
+
   attr_accessor :record_set_list
 
   def make_hosted_zone_config(new_resource)
@@ -94,10 +97,15 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
 
-      record_set_resources = get_record_sets_from_resource(new_resource, zone)
+      record_set_resources = get_record_sets_from_resource(new_resource)
 
       if record_set_resources
-        write_record_sets(new_resource, record_set_resources, :create)
+        change_list = record_set_resources.map { |rs| rs.to_aws_struct(CREATE) }
+        result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                                change_batch: {
+                                                                                 comment: "Managed by Chef",
+                                                                                 changes: change_list,
+                                                                                 })
       end
 
       zone
@@ -146,7 +154,9 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
     end
   end
 
-  def get_record_sets_from_resource(new_resource, hosted_zone)
+  # `record_sets` is defined on the `aws_route53_hosted_zone` resource as a block attribute, so compile that,
+  # validate it, and return a list of AWSRoute53RecordSet resource objects.
+  def get_record_sets_from_resource(new_resource)
 
     return nil unless new_resource.record_sets
     instance_eval(&new_resource.record_sets)
@@ -156,38 +166,11 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
     return nil unless record_set_resources
 
     record_set_resources.each do |rs|
+      rs.aws_route53_zone_id(new_resource.aws_route53_zone_id)
       rs.validate!
     end
 
     Chef::Resource::AwsRoute53RecordSet.verify_unique!(record_set_resources)
     record_set_resources
   end
-
-  def write_record_sets(new_resource, record_set_resources, action)
-    Chef::Log.warn "attempting to submit RR: #{new_resource.record_set_resources}"
-    verb = case action
-              when :create
-                "CREATE"
-              when :update
-                "UPSERT"
-              else
-                raise ArgumentError("Invalid action '#{action}' passed to write_record_sets")
-              end
-
-    aws_struct = record_set_resources.map { |rs| rs.to_aws_struct("UPSERT") }
-    puts "\n#{aws_struct}"
-
-    begin
-      result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
-                                                                              change_batch: {
-                                                                               comment: "Managed by Chef",
-                                                                               changes: aws_struct,
-                                                                               })
-    rescue StandardError => ex
-        # puts "\n"
-        # Chef::Log.warn "#{ex.class}: #{ex.message}"
-      raise
-    end
-  end
-
 end

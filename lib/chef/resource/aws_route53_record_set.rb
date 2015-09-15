@@ -1,10 +1,10 @@
 class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
 
-  actions :nothing, :validate, :create, :delete
+  actions :nothing
   default_action :nothing
 
   resource_name :aws_route53_record_set
-  attribute :aws_hosted_zone_id, kind_of: String, required: true
+  attribute :aws_route53_zone_id, kind_of: String, required: true
 
   # if you add the trailing dot yourself, you get "FATAL problem: DomainLabelEmpty encountered"
   attribute :rr_name, required: true, callbacks: { "cannot end with a dot" => lambda { |n| n !~ /\.$/ }}
@@ -12,23 +12,21 @@ class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
   attribute :type, equal_to: %w(SOA A TXT NS CNAME MX PTR SRV SPF AAAA), required: true
   attribute :ttl, kind_of: Fixnum, required: true
   attribute :resource_records, kind_of: Array, required: true
-  attribute :hosted_zone_name, kind_of: String
 
 
   def validate!
     [:rr_name, :type, :ttl, :value].each { |f| self.send(f) }
   end
 
-  def to_aws_struct(new_action=nil)
+  def aws_key
+    "#{rr_name}, #{type}"
+  end
+
+  def to_aws_struct(aws_action=nil)
     # there are more elements which are optional, notably 'weight' and 'region': see the API doc at
     # http://redirx.me/?t3zo
-    aws_action = new_action || if action.first == :create
-      "UPSERT"
-    else
-      "DELETE"
-    end
 
-    Chef::Log.info("Action '#{aws_action}' for RR [#{rr_name}, #{type}]")
+    Chef::Log.info("Action '#{aws_action}' for RR [#{aws_key}]")
 
     {
       action: aws_action,

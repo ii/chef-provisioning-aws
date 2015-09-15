@@ -99,6 +99,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       new_resource.aws_route53_zone_id(zone.id)
 
       record_set_list = get_record_sets_from_resource(new_resource, zone)
+
       if record_set_list
         change_record_sets(new_resource, record_set_list)
       end
@@ -121,19 +122,16 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
     if purging
       Chef::Log.info("Deleting all non-SOA/NS records for #{hosted_zone.name}")
+
       rr_changes = hosted_zone.resource_record_sets.reject { |aws_rr|
         %w{SOA NS}.include?(aws_rr.type)
         }.map { |aws_rr|
           {
             action: "DELETE",
-            resource_record_set: {
-              name: aws_rr.name,
-              type: aws_rr.type,
-              ttl: aws_rr.ttl,
-              resource_records: [aws_rr.resource_records.map {|r| [:value, r.value]}.to_h],
-            }
+            resource_record_set: aws_rr.to_change_struct
           }
         }
+
       if rr_changes.size > 0
         aws_struct = {
           hosted_zone_id: hosted_zone.id,

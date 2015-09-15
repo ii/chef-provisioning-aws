@@ -153,6 +153,8 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   end
 
   def get_record_sets_from_resource(new_resource, hosted_zone)
+
+    return nil unless new_resource.record_sets
     instance_eval(&new_resource.record_sets)
 
     # pretty fuzzy on whether this is right or why it seems to work.
@@ -168,6 +170,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   end
 
   def change_record_sets(new_resource, record_set_list)
+    return
     Chef::Log.warn "attempting to submit RR: #{new_resource.record_set_list}"
     aws_struct = record_set_list.map { |rs| rs.to_aws_struct("UPSERT") }
     puts "\n#{aws_struct}"

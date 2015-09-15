@@ -30,6 +30,34 @@ describe Chef::Resource::AwsRoute53HostedZone do
                                                    config: { comment: test_comment }
                                                    ).and be_idempotent
           end
+
+          it "crashes on recipes with duplicate [name, type] RecordSets" do
+            test_comment = "Test comment for spec."
+
+            expect_converge {
+              aws_route53_hosted_zone zone_name do
+                action :create
+                comment test_comment
+
+                record_sets {
+                  aws_route53_record_set "wooster1" do
+                    rr_name "wooster.example.com"
+                    type "CNAME"
+                    ttl 300
+                  end
+                  aws_route53_record_set "wooster2" do
+                    rr_name "wooster.example.com"
+                    type "CNAME"
+                    ttl 3600
+                  end
+                }
+              end
+            }.to raise_error(Chef::Exceptions::ValidationFailed)
+          end
+
+        end
+
+        context ":update" do
         end
 
         context ":purge" do

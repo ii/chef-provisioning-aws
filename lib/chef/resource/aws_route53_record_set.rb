@@ -47,11 +47,13 @@ class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
     record_sets.each do |rs|
       key = "#{rs.rr_name}, #{rs.type}"
       if seen.has_key?(key)
-        raise Exceptions::ValidationFailed("Duplicate RecordSet found in resource: [#{key}]")
+        raise Chef::Exceptions::ValidationFailed.new("Duplicate RecordSet found in resource: [#{key}]")
       else
         seen[key] = 1
       end
     end
+
+    # TODO: be helpful and print out all duplicates, not just the first.
 
     true
   end

@@ -128,8 +128,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   end
 
   def destroy_aws_object(hosted_zone)
-
-    if true || purging
+    converge_by "delete Route53 zone #{new_resource}" do
       Chef::Log.info("Deleting all non-SOA/NS records for #{hosted_zone.name}")
 
       rr_changes = hosted_zone.resource_record_sets.reject { |aws_rr|
@@ -152,9 +151,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
         new_resource.driver.route53_client.change_resource_record_sets(aws_struct)
       end
-    end
 
-    converge_by "delete Route53 zone #{new_resource}" do
       result = new_resource.driver.route53_client.delete_hosted_zone(id: hosted_zone.id)
     end
   end

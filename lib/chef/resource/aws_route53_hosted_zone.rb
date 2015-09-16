@@ -7,9 +7,13 @@ class Aws::Route53::Types::HostedZone
   attr_accessor :resource_record_sets
 end
 
-# the API doesn't seem to provide any facility to convert these types into the data structures used by the
-# API; see http://redirx.me/?t3za for the RecordSet type specifically.
 class Aws::Route53::Types::ResourceRecordSet
+  def aws_key
+    "#{name.sub(/\.$/, '')}, #{type}"
+  end
+
+  # the API doesn't seem to provide any facility to convert these types into the data structures used by the
+  # API; see http://redirx.me/?t3za for the RecordSet type specifically.
   def to_change_struct
     {
       name: name,
@@ -53,6 +57,7 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
     end
   end
 
+  # since this is used exactly once, it could plausibly be inlined in #aws_object.
   def get_record_sets_from_aws(hosted_zone_id, opts={})
     params = { hosted_zone_id: hosted_zone_id }.merge(opts)
     driver.route53_client.list_resource_record_sets(params)
@@ -105,11 +110,11 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
             change_list = record_set_resources.map { |rs| rs.to_aws_change_struct(CREATE) }
 
-            result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
-                                                                                    change_batch: {
-                                                                                     comment: RRS_COMMENT,
-                                                                                     changes: change_list,
-                                                                                     })
+            new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                           change_batch: {
+                                                                             comment: RRS_COMMENT,
+                                                                             changes: change_list,
+                                                                             })
           end
         rescue => ex
           # the change call is transactional, so we just need to clean up the zone we created.
@@ -121,11 +126,48 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
   end
 
   def update_aws_object(hosted_zone)
-    # record_set_list = get_record_sets_from_resource(new_resource, hosted_zone)
 
-    if new_resource.comment != hosted_zone.config.comment
-      converge_by "update Route 53 zone #{new_resource}" do
+    new_resource.aws_route53_zone_id(hosted_zone.id)
+
+    converge_by "update Route 53 zone #{new_resource}" do
+
+      if new_resource.comment != hosted_zone.config.comment
         new_resource.driver.route53_client.update_hosted_zone_comment(id: hosted_zone.id, comment: new_resource.comment)
+      end
+
+      begin
+        record_set_resources = get_record_sets_from_resource(new_resource)
+        aws_record_sets = hosted_zone.resource_record_sets
+
+        change_list = []
+
+        # we already checked for duplicate Chef RR resources in #get_record_sets_from_resource.
+        keyed_chef_resources = record_set_resources.reduce({}) { |coll, rs| coll[rs.aws_key] = rs; coll }
+        keyed_aws_objects    = aws_record_sets.reduce({})      { |coll, rs| coll[rs.aws_key] = rs; coll }
+
+        # require 'pry'; binding.pry
+        keyed_chef_resources.each do |key, chef_resource|
+          if keyed_aws_objects.has_key?(key) &&
+            chef_resource.to_aws_struct != keyed_aws_objects[key].to_change_struct
+            change_list << "\nWill update #{keyed_aws_objects[key].to_change_struct} to #{chef_resource.to_aws_struct}"
+          end
+        end
+
+        # require 'pry'; binding.pry
+
+        if false
+          new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                         change_batch: {
+                                                                           comment: RRS_COMMENT,
+                                                                           changes: change_list,
+                                                                           })
+        end
+      rescue => ex
+        # the RecordSet change is transactional, but we must revert the comment manually.
+        if new_resource.comment != hosted_zone.config.comment
+          new_resource.driver.route53_client.update_hosted_zone_comment(id: hosted_zone.id, comment: hosted_zone.config.comment)
+        end
+        raise
       end
     end
   end

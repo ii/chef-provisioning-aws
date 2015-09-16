@@ -22,17 +22,21 @@ class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
     "#{rr_name}, #{type}"
   end
 
+  def to_aws_struct
+    {
+      name: rr_name,
+      type: type,
+      ttl: ttl,
+      resource_records: resource_records,
+    }
+  end
+
   def to_aws_change_struct(aws_action)
     # there are more elements which are optional, notably 'weight' and 'region': see the API doc at
     # http://redirx.me/?t3zo
     {
       action: aws_action,
-      resource_record_set: {
-        name: rr_name,
-        type: type,
-        ttl: ttl,
-        resource_records: resource_records,
-      }
+      resource_record_set: self.to_aws_struct
     }
   end
 

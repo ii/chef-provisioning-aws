@@ -39,8 +39,6 @@ describe Chef::Resource::AwsRoute53HostedZone do
           # inside the `record_sets` block, which gets instance_eval'd in the aws_route53_hosted_zone resource.
 
           it "crashes on duplicate [name, type] RecordSets" do
-            skip "doesn't delete zone"
-
             expect_converge {
               aws_route53_hosted_zone "chasm.com" do
                 action :create
@@ -58,37 +56,31 @@ describe Chef::Resource::AwsRoute53HostedZone do
                   end
                 }
               end
-            }.to raise_error(Chef::Exceptions::ValidationFailed)
+            }.to raise_error(Chef::Exceptions::ValidationFailed, /Duplicate RecordSet found in resource/)
           end
 
           it "crashes on a RecordSet with a non-:nothing action" do
-
-            skip "doesn't delete zone"
             expect_converge {
-              # aws_route53_hosted_zone zone_name do
-              #   action :create
+              aws_route53_hosted_zone zone_name do
+                action :create
 
-              #   record_sets {
-              #     aws_route53_record_set "wooster1" do
-              #       action :create
-              #       rr_name "wooster.example.com"
-              #       type "CNAME"
-              #       # ttl 300
-              #     end
-              #   }
-              # end
+                record_sets {
                   aws_route53_record_set "wooster1" do
-                    action :kjsbdjkhbsf
+                    action :create
                     rr_name "wooster.example.com"
                     type "CNAME"
-                    # ttl 300
+                    ttl 300
                   end
-            }.to raise_error(ArgumentError) # Chef::Exceptions::ValidationFailed)
+                }
+              end
+            }.to raise_error(Chef::Exceptions::ValidationFailed, /Option action must be equal to one of/)
           end
         end
 
         it "creates a hosted zone with RecordSets and purges it" do
-          # skip "hurrrrr"
+          # because we're doing `instance_eval` and not `eval`, the `zone_name` let-var is not available
+          # inside the aws_route53_record_set.
+
           expect_recipe {
             aws_route53_hosted_zone "feegle.com" do
               action :create
@@ -100,8 +92,6 @@ describe Chef::Resource::AwsRoute53HostedZone do
                   resource_records [{ value: "some-other-host"}]
                 end
 
-                # Chefception: because we're doing `instance_eval` and not `eval`, the `zone_name` let-var
-                # is not available inside the aws_route53_record_set, which is...less useful.
 
                 # aws_route53_record_set "something A" do
                 #   rr_name "some-api-host.#{zone_name}"

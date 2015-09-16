@@ -22,12 +22,9 @@ class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
     "#{rr_name}, #{type}"
   end
 
-  def to_aws_struct(aws_action=nil)
+  def to_aws_change_struct(aws_action)
     # there are more elements which are optional, notably 'weight' and 'region': see the API doc at
     # http://redirx.me/?t3zo
-
-    Chef::Log.info("Action '#{aws_action}' for RR [#{aws_key}]")
-
     {
       action: aws_action,
       resource_record_set: {

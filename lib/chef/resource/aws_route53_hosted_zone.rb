@@ -9,13 +9,13 @@ end
 
 # the API doesn't seem to provide any facility to convert these types into the data structures used by the
 # API; see http://redirx.me/?t3za for the RecordSet type specifically.
-class Aws::Route53::Types::RecordSet
+class Aws::Route53::Types::ResourceRecordSet
   def to_change_struct
     {
       name: name,
       type: type,
       ttl: ttl,
-      resource_records: [resource_records.map {|r| [:value, r.value]}.to_h],
+      resource_records: resource_records.map {|r| {:value => r.value}},
     }
   end
 end
@@ -100,7 +100,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       record_set_resources = get_record_sets_from_resource(new_resource)
 
       if record_set_resources
-        change_list = record_set_resources.map { |rs| rs.to_aws_struct(CREATE) }
+        change_list = record_set_resources.map { |rs| rs.to_aws_change_struct(CREATE) }
         result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
                                                                                 change_batch: {
                                                                                  comment: "Managed by Chef",

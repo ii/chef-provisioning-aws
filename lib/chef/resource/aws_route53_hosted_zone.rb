@@ -101,11 +101,16 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
       if record_set_resources
         change_list = record_set_resources.map { |rs| rs.to_aws_change_struct(CREATE) }
-        result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
-                                                                                change_batch: {
-                                                                                 comment: "Managed by Chef",
-                                                                                 changes: change_list,
-                                                                                 })
+        begin
+          result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                                  change_batch: {
+                                                                                   comment: "Managed by Chef",
+                                                                                   changes: change_list,
+                                                                                   })
+        rescue RuntimeError => ex
+          new_resource.driver.route53_client.delete_hosted_zone(id: zone.id)
+          raise
+        end
       end
 
       zone

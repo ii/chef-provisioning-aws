@@ -145,22 +145,22 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
         keyed_chef_resources = record_set_resources.reduce({}) { |coll, rs| coll[rs.aws_key] = rs; coll }
         keyed_aws_objects    = aws_record_sets.reduce({})      { |coll, rs| coll[rs.aws_key] = rs; coll }
 
-        # require 'pry'; binding.pry
         keyed_chef_resources.each do |key, chef_resource|
           if keyed_aws_objects.has_key?(key) &&
             chef_resource.to_aws_struct != keyed_aws_objects[key].to_change_struct
-            change_list << "\nWill update #{keyed_aws_objects[key].to_change_struct} to #{chef_resource.to_aws_struct}"
+            change_list << chef_resource.to_aws_change_struct(UPDATE)
           end
         end
 
-        # require 'pry'; binding.pry
 
-        if false
+        if change_list.size > 0
           new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
                                                                          change_batch: {
                                                                            comment: RRS_COMMENT,
                                                                            changes: change_list,
                                                                            })
+        else
+          Chef::Log.info("All aws_route53_record_set resources up to date (nothing to do).")
         end
       rescue => ex
         # the RecordSet change is transactional, but we must revert the comment manually.

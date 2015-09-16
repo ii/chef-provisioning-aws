@@ -56,30 +56,5 @@ end
 
 class Chef::Provider::AwsRoute53RecordSet < Chef::Provider::LWRPBase
   provides :aws_route53_recordset
-
-  # action :validate do
-  #   new_resource.validate!
-  # end
-
-  # action :create do
-  # end
-
-  # action :delete do
-  # end
 end
-
-  # 'changes' points to an array of these:
-  # {
-  #   action: "UPSERT", # required, accepts CREATE, DELETE, UPSERT
-  #   resource_record_set: { # required
-  #     name: "some-api-host.#{zone_name}", # required
-  #     type: "CNAME", # required, accepts SOA, A, TXT, NS, CNAME, MX, PTR, SRV, SPF, AAAA
-  #     ttl: 3600,
-  #     resource_records: [
-  #       {
-  #         value: "some-other-host.example.com.", # required
-  #       },
-  #     ],
-  #   },
-  # },
 

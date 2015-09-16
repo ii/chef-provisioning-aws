@@ -71,6 +71,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
   CREATE = "CREATE"
   UPDATE = "UPSERT"
+  DELETE = "DELETE"
   RRS_COMMENT = "Managed by chef-provisioning-aws"
 
   attr_accessor :record_set_list
@@ -145,10 +146,12 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
         keyed_chef_resources = record_set_resources.reduce({}) { |coll, rs| coll[rs.aws_key] = rs; coll }
         keyed_aws_objects    = aws_record_sets.reduce({})      { |coll, rs| coll[rs.aws_key] = rs; coll }
 
+        # TODO: implement :destroy for RRs.
         keyed_chef_resources.each do |key, chef_resource|
           if keyed_aws_objects.has_key?(key) &&
             chef_resource.to_aws_struct != keyed_aws_objects[key].to_change_struct
-            change_list << chef_resource.to_aws_change_struct(UPDATE)
+            action = chef_resource.action.first == :destroy ? DELETE : UPDATE
+            change_list << chef_resource.to_aws_change_struct(action)
           end
         end
 
@@ -180,8 +183,8 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
         %w{SOA NS}.include?(aws_rr.type)
         }.map { |aws_rr|
           {
-            action: "DELETE",
-            resource_record_set: aws_rr.to_change_struct
+            action: DELETE,
+            resource_record_set: aws_rr.to_change_struct,
           }
         }
 

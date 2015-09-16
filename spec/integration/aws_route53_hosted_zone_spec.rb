@@ -77,7 +77,7 @@ describe Chef::Resource::AwsRoute53HostedZone do
           end
         end
 
-        it "creates a hosted zone with RecordSets and purges it" do
+        it "creates a hosted zone with a RecordSet" do
           # because we're doing `instance_eval` and not `eval`, the `zone_name` let-var is not available
           # inside the aws_route53_record_set.
 
@@ -91,20 +91,75 @@ describe Chef::Resource::AwsRoute53HostedZone do
                   ttl 3600
                   resource_records [{ value: "some-other-host"}]
                 end
-
-
-                # aws_route53_record_set "something A" do
-                #   rr_name "some-api-host.#{zone_name}"
-                #   type "A"
-                #   ttl 3600
-                #   resource_records [
-                #     { value: "141.222.2.2"   },
-                #     { value: "192.168.10.89" },
-                #   ]
-                # end
               }
             end
-          }.to create_an_aws_route53_hosted_zone("feegle.com")        #.and be_idempotent
+            # TODO: add a verification hash to see the RecordSet is correct.
+          }.to create_an_aws_route53_hosted_zone("feegle.com") #.and be_idempotent
+        end
+
+        it "creates a hosted zone with a RecordSet and updates the RecordSet" do
+          # because we're doing `instance_eval` and not `eval`, the `zone_name` let-var is not available
+          # inside the aws_route53_record_set.
+
+          expect_recipe {
+            aws_route53_hosted_zone "feegle.com" do
+              action :create
+              record_sets {
+                aws_route53_record_set "some-hostname CNAME" do
+                  rr_name "some-api-host.feegle.com"
+                  type "CNAME"
+                  ttl 3600
+                  resource_records [{ value: "some-other-host"}]
+                end
+              }
+            end
+
+            aws_route53_hosted_zone "feegle.com" do
+              action :create
+              record_sets {
+                aws_route53_record_set "some-hostname CNAME" do
+                  rr_name "some-api-host.feegle.com"
+                  type "CNAME"
+                  ttl 1800
+                  resource_records [{ value: "far-side-of-the-world"}]
+                end
+              }
+            end
+            # TODO: add a verification hash to see the RecordSet is correct.
+          }.to create_an_aws_route53_hosted_zone("feegle.com")
+        end
+
+        it "creates a hosted zone with a RecordSet and then deletes the RecordSet" do
+          # because we're doing `instance_eval` and not `eval`, the `zone_name` let-var is not available
+          # inside the aws_route53_record_set.
+
+          expect_recipe {
+            aws_route53_hosted_zone "feegle.com" do
+              action :create
+              record_sets {
+                aws_route53_record_set "some-hostname CNAME" do
+                  rr_name "some-api-host.feegle.com"
+                  type "CNAME"
+                  ttl 3600
+                  resource_records [{ value: "some-other-host"}]
+                end
+              }
+            end
+
+            aws_route53_hosted_zone "feegle.com" do
+              action :create
+              record_sets {
+                aws_route53_record_set "some-hostname CNAME" do
+                  action :destroy
+                  rr_name "some-api-host.feegle.com"
+                  type "CNAME"
+                  ttl 3600
+                  resource_records [{ value: "some-other-host"}]
+                end
+              }
+            end
+            # TODO: add a verification hash to see the RecordSet is correct.
+          }.to create_an_aws_route53_hosted_zone("feegle.com")
         end
       end
     end

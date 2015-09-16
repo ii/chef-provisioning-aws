@@ -1,7 +1,7 @@
 class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
 
-  actions :nothing
-  default_action :nothing
+  actions :create, :destroy
+  default_action :create
 
   resource_name :aws_route53_record_set
   attribute :aws_route53_zone_id, kind_of: String, required: true
@@ -60,5 +60,12 @@ end
 
 class Chef::Provider::AwsRoute53RecordSet < Chef::Provider::LWRPBase
   provides :aws_route53_recordset
+
+  # to make RR changes in transactional batches, it has to be done in the parent resource.
+  action :create do
+  end
+
+  action :destroy do
+  end
 end
 

@@ -66,6 +66,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
   CREATE = "CREATE"
   UPDATE = "UPSERT"
+  RRS_COMMENT = "Managed by chef-provisioning-aws"
 
   attr_accessor :record_set_list
 
@@ -97,22 +98,24 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
 
-      record_set_resources = get_record_sets_from_resource(new_resource)
-
-      if record_set_resources
-        change_list = record_set_resources.map { |rs| rs.to_aws_change_struct(CREATE) }
         begin
-          result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
-                                                                                  change_batch: {
-                                                                                   comment: "Managed by Chef",
-                                                                                   changes: change_list,
-                                                                                   })
-        rescue RuntimeError => ex
+          record_set_resources = get_record_sets_from_resource(new_resource)
+
+          if record_set_resources
+
+            change_list = record_set_resources.map { |rs| rs.to_aws_change_struct(CREATE) }
+
+            result = new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                                    change_batch: {
+                                                                                     comment: RRS_COMMENT,
+                                                                                     changes: change_list,
+                                                                                     })
+          end
+        rescue => ex
+          # the change call is transactional, so we just need to clean up the zone we created.
           new_resource.driver.route53_client.delete_hosted_zone(id: zone.id)
           raise
         end
-      end
-
       zone
     end
   end
@@ -163,7 +166,8 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
     return nil unless new_resource.record_sets
     instance_eval(&new_resource.record_sets)
 
-    # pretty fuzzy on whether this is right or why it seems to work.
+    # because we're in the provider, the RecordSet resource happen in their own mini Chef run, and they're the
+    # only things in the resource_collection.
     record_set_resources = run_context.resource_collection.to_a
     return nil unless record_set_resources
 

@@ -59,7 +59,7 @@ class Chef::Resource::AwsRoute53RecordSet < Chef::Resource::LWRPBase
 end
 
 class Chef::Provider::AwsRoute53RecordSet < Chef::Provider::LWRPBase
-  provides :aws_route53_recordset
+  provides :aws_route53_record_set
 
   # to make RR changes in transactional batches, it has to be done in the parent resource.
   action :create do

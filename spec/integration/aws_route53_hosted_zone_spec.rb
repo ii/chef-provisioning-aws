@@ -70,14 +70,11 @@ describe Chef::Resource::AwsRoute53HostedZone do
 
           # normally wouldn't bother with this, and maybe even here we shouldn't.
           it "crashes on a RecordSet with an invalid action" do
-            skip "modify to test outside [:create, :destroy]"
             expect_converge {
               aws_route53_hosted_zone zone_name do
-                action :create
-
                 record_sets {
                   aws_route53_record_set "wooster1" do
-                    action :create
+                    action :invoke
                     rr_name "wooster.example.com"
                     type "CNAME"
                     ttl 300
@@ -107,15 +104,18 @@ describe Chef::Resource::AwsRoute53HostedZone do
                 end
               }
             end
-            # TODO: add a verification hash to see the RecordSet is correct.
           }.to create_an_aws_route53_hosted_zone("feegle.com",
-                                                 # non_default_resource_record_sets: [{ttl: n}])
                                                  resource_record_sets: [{}, {}, expected_sdk_rr])
                                                   #.and be_idempotent
         end
 
-        # TODO: doesn't verify the RecordSet was updated, or check idempotence.
         it "creates and updates a RecordSet" do
+          expected_sdk_rr = {
+            name: "some-api-host.feegle.com.",  # AWS adds the trailing dot.
+            type: "CNAME",
+            ttl: 1800,
+            resource_records: [{ value: "far-side-of-the-world"}],
+          }
           expect_recipe {
             aws_route53_hosted_zone "feegle.com" do
               action :create
@@ -140,11 +140,11 @@ describe Chef::Resource::AwsRoute53HostedZone do
                 end
               }
             end
-            # TODO: add a verification hash to see the RecordSet is correct.
-          }.to create_an_aws_route53_hosted_zone("feegle.com") #.and be_idempotent
+          }.to create_an_aws_route53_hosted_zone("feegle.com",
+                                                 resource_record_sets: [{}, {}, expected_sdk_rr])
+                                                 #.and be_idempotent
         end
 
-        # TODO: doesn't verify the RecordSet was deleted.
         it "creates and deletes a RecordSet" do
 
           expect_recipe {
@@ -172,9 +172,11 @@ describe Chef::Resource::AwsRoute53HostedZone do
                 end
               }
             end
-            # TODO: add a verification hash to see the RecordSet is correct.
-          }.to create_an_aws_route53_hosted_zone("feegle.com")
+          }.to create_an_aws_route53_hosted_zone("feegle.com",
+                                                 resource_record_sets: [{}, {}])
         end
+
+        it "raises the AWS exception when trying to delete a record using mismatched values"
 
         it "works with RR types besides CNAME and A"
 

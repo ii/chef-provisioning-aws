@@ -30,8 +30,10 @@ class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSR
 
   resource_name :aws_route53_hosted_zone
 
-  # name of the domain. unlike an RR name, this can (must?) have a trailing dot.
-  attribute :name, kind_of: String, name_attribute: true
+  # name of the domain. AWS will tack on a trailing dot, so we're going to prohibit it here for consistency:
+  # the name is our data bag key, and if a user has "foo.com" in one resource and "foo.com." in another, Route
+  # 53 will happily accept two different domains it calls "foo.com.".
+  attribute :name, kind_of: String, callbacks: { "domain name cannot end with a dot" => lambda { |n| n !~ /\.$/ } }
 
   # The comment included in the CreateHostedZoneRequest element. String <= 256 characters.
   attribute :comment, kind_of: String
@@ -138,32 +140,34 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
       begin
         record_set_resources = get_record_sets_from_resource(new_resource)
-        aws_record_sets = hosted_zone.resource_record_sets
+        if record_set_resources
+          aws_record_sets = hosted_zone.resource_record_sets
 
-        change_list = []
+          change_list = []
 
-        # we already checked for duplicate Chef RR resources in #get_record_sets_from_resource.
-        keyed_chef_resources = record_set_resources.reduce({}) { |coll, rs| coll[rs.aws_key] = rs; coll }
-        keyed_aws_objects    = aws_record_sets.reduce({})      { |coll, rs| coll[rs.aws_key] = rs; coll }
+          # we already checked for duplicate Chef RR resources in #get_record_sets_from_resource.
+          keyed_chef_resources = record_set_resources.reduce({}) { |coll, rs| coll[rs.aws_key] = rs; coll }
+          keyed_aws_objects    = aws_record_sets.reduce({})      { |coll, rs| coll[rs.aws_key] = rs; coll }
 
-        # TODO: implement :destroy for RRs.
-        keyed_chef_resources.each do |key, chef_resource|
-          if keyed_aws_objects.has_key?(key) &&
-            chef_resource.to_aws_struct != keyed_aws_objects[key].to_change_struct
-            action = chef_resource.action.first == :destroy ? DELETE : UPDATE
-            change_list << chef_resource.to_aws_change_struct(action)
+          # TODO: implement :destroy for RRs.
+          keyed_chef_resources.each do |key, chef_resource|
+            if keyed_aws_objects.has_key?(key) &&
+              chef_resource.to_aws_struct != keyed_aws_objects[key].to_change_struct
+              action = chef_resource.action.first == :destroy ? DELETE : UPDATE
+              change_list << chef_resource.to_aws_change_struct(action)
+            end
           end
-        end
 
 
-        if change_list.size > 0
-          new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
-                                                                         change_batch: {
-                                                                           comment: RRS_COMMENT,
-                                                                           changes: change_list,
-                                                                           })
-        else
-          Chef::Log.info("All aws_route53_record_set resources up to date (nothing to do).")
+          if change_list.size > 0
+            new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                           change_batch: {
+                                                                             comment: RRS_COMMENT,
+                                                                             changes: change_list,
+                                                                             })
+          else
+            Chef::Log.info("All aws_route53_record_set resources up to date (nothing to do).")
+          end
         end
       rescue => ex
         # the RecordSet change is transactional, but we must revert the comment manually.

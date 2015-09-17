@@ -46,6 +46,8 @@ aws_route53_hosted_zone "feegle.com" do
       rr_name "an-A-host.feegle.com"
       type "A"
       ttl 3600
+
+      # if these hashes are always just { value: blah }, then this can be an array of simple values.
       resource_records [
         { value: "141.222.2.2"   },
         { value: "192.168.10.89" },

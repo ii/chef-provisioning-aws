@@ -89,24 +89,23 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
       zone = new_resource.driver.route53_client.create_hosted_zone(values).hosted_zone
       new_resource.aws_route53_zone_id(zone.id)
 
-        begin
-          record_set_resources = get_record_sets_from_resource(new_resource)
+      begin
+        record_set_resources = get_record_sets_from_resource(new_resource)
 
-          if record_set_resources
+        if record_set_resources
+          change_list = record_set_resources.map { |rs| rs.to_aws_change_struct(CREATE) }
 
-            change_list = record_set_resources.map { |rs| rs.to_aws_change_struct(CREATE) }
-
-            new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
-                                                                           change_batch: {
-                                                                             comment: RRS_COMMENT,
-                                                                             changes: change_list,
-                                                                             })
-          end
-        rescue => ex
-          # the change call is transactional, so we just need to clean up the zone we created.
-          new_resource.driver.route53_client.delete_hosted_zone(id: zone.id)
-          raise
+          new_resource.driver.route53_client.change_resource_record_sets(hosted_zone_id: new_resource.aws_route53_zone_id,
+                                                                         change_batch: {
+                                                                           comment: RRS_COMMENT,
+                                                                           changes: change_list,
+                                                                           })
         end
+      rescue => ex
+        # the change call is transactional, so we just need to clean up the zone we created.
+        new_resource.driver.route53_client.delete_hosted_zone(id: zone.id)
+        raise
+      end
       zone
     end
   end

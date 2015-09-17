@@ -80,7 +80,7 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
   def make_hosted_zone_config(new_resource)
     config = {}
-    # add :private_zone here once validation is enabled.
+    # add :private_zone here once VPC validation is enabled.
     [:comment].each do |attr|
       value = new_resource.send(attr)
       if value

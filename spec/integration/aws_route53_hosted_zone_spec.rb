@@ -31,6 +31,14 @@ describe Chef::Resource::AwsRoute53HostedZone do
                                                    config: { comment: test_comment }
                                                    ).and be_idempotent
           end
+
+          # we don't want to go overboard testing all our validations, but this is the one that can cause the
+          # most difficult user confusion.
+          it "crashes if the zone name has a trailing dot" do
+            expect_converge {
+              aws_route53_hosted_zone "#{zone_name}."
+            }.to raise_error(Chef::Exceptions::ValidationFailed, /domain name cannot end with a dot/)
+          end
         end
 
         context "RecordSets" do

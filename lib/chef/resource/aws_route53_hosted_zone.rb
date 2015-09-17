@@ -7,23 +7,6 @@ class Aws::Route53::Types::HostedZone
   attr_accessor :resource_record_sets
 end
 
-class Aws::Route53::Types::ResourceRecordSet
-  def aws_key
-    "#{name.sub(/\.$/, '')}, #{type}"
-  end
-
-  # the API doesn't seem to provide any facility to convert these types into the data structures used by the
-  # API; see http://redirx.me/?t3za for the RecordSet type specifically.
-  def to_change_struct
-    {
-      name: name,
-      type: type,
-      ttl: ttl,
-      resource_records: resource_records.map {|r| {:value => r.value}},
-    }
-  end
-end
-
 class Chef::Resource::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSResourceWithEntry
 
   aws_sdk_type ::Aws::Route53::Types::HostedZone, load_provider: false

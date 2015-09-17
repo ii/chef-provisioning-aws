@@ -11,6 +11,7 @@ aws_route53_hosted_zone "feegle.com."
 aws_route53_hosted_zone "feegle.com"
 
 # create a Route 53 Hosted Zone with a CNAME record.
+# TODO(9/17/2015): maybe add an RRS attribute to append the enclosing zone name (like 'append_zone_name true').
 aws_route53_hosted_zone "feegle.com" do
   record_sets {
     aws_route53_record_set "some-hostname CNAME" do

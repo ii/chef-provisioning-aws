@@ -27,7 +27,7 @@ require 'ubuntu_ami'
 
 # loads the entire aws-sdk
 AWS.eager_autoload!
-AWS_V2_SERVICES = {"EC2" => "ec2", "S3" => "s3", "ElasticLoadBalancing" => "elb"}
+AWS_V2_SERVICES = {"EC2" => "ec2", "S3" => "s3", "ElasticLoadBalancing" => "elb", "IAM" => "iam"}
 Aws.eager_autoload!(:services => AWS_V2_SERVICES.keys)
 
 # Need to load the resources after the SDK because `aws_sdk_types` can mess
@@ -695,6 +695,9 @@ EOD
       if !bootstrap_options[:key_name]
         Chef::Log.debug('No key specified, generating a default one...')
         bootstrap_options[:key_name] = default_aws_keypair(action_handler, machine_spec)
+      end
+      if bootstrap_options[:iam_instance_profile] && bootstrap_options[:iam_instance_profile].is_a?(String)
+        bootstrap_options[:iam_instance_profile] = {name: bootstrap_options[:iam_instance_profile]}
       end
 
       if machine_options[:is_windows]

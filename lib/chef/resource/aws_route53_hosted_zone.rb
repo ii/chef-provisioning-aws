@@ -112,9 +112,8 @@ class Chef::Provider::AwsRoute53HostedZone < Chef::Provisioning::AWSDriver::AWSP
 
   def update_aws_object(hosted_zone)
 
-    new_resource.aws_route53_zone_id(hosted_zone.id)
-
     converge_by "update Route 53 zone #{new_resource}" do
+      new_resource.aws_route53_zone_id(hosted_zone.id)
 
       if new_resource.comment != hosted_zone.config.comment
         new_resource.driver.route53_client.update_hosted_zone_comment(id: hosted_zone.id, comment: new_resource.comment)

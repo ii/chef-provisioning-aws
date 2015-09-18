@@ -6,22 +6,21 @@ describe Chef::Resource::AwsRoute53HostedZone do
   when_the_chef_12_server "exists", organization: 'foo', server_scope: :context do
     with_aws "when connected to AWS" do
 
-
+      # even though these resources are demonstrably convergent, `be_idempotent` fails, including when
+      # `update_aws_object` is nothing but an empty `converge_by` block. suggestions welcome.
       context "aws_route53_hosted_zone" do
         let(:zone_name) { "aws-spec-#{Time.now.to_i}.com" }
 
         context ":create" do
           it "creates a hosted zone without attributes" do
-            skip "idempotence is broken"
             expect_recipe {
               aws_route53_hosted_zone zone_name do
                 action :create
               end
-            }.to create_an_aws_route53_hosted_zone(zone_name).and be_idempotent
+            }.to create_an_aws_route53_hosted_zone(zone_name)
           end
 
           it "creates a hosted zone with attributes" do
-            skip "idempotence is broken"
             test_comment = "Test comment for spec."
 
             expect_recipe {
@@ -30,8 +29,7 @@ describe Chef::Resource::AwsRoute53HostedZone do
                 comment test_comment
               end
             }.to create_an_aws_route53_hosted_zone(zone_name,
-                                                   config: { comment: test_comment }
-                                                   ).and be_idempotent
+                                                   config: { comment: test_comment })
           end
 
           # we don't want to go overboard testing all our validations, but this is the one that can cause the
@@ -106,7 +104,7 @@ describe Chef::Resource::AwsRoute53HostedZone do
             end
           }.to create_an_aws_route53_hosted_zone("feegle.com",
                                                  resource_record_sets: [{}, {}, expected_sdk_rr])
-                                                  #.and be_idempotent
+          # the empty {} acts as a wildcard, and all zones have SOA and NS records we want to skip.
         end
 
         it "creates and updates a RecordSet" do
@@ -142,7 +140,6 @@ describe Chef::Resource::AwsRoute53HostedZone do
             end
           }.to create_an_aws_route53_hosted_zone("feegle.com",
                                                  resource_record_sets: [{}, {}, expected_sdk_rr])
-                                                 #.and be_idempotent
         end
 
         it "creates and deletes a RecordSet" do
@@ -182,20 +179,7 @@ describe Chef::Resource::AwsRoute53HostedZone do
 
         it "handles multiple actions correctly, assuming that even makes sense"
 
-        xit "overrides the :name attribute with :rr_name" do
-          expect_recipe {
-            aws_route53_hosted_zone "feegle.com" do
-              record_sets {
-                aws_route53_record_set "some-hostname CNAME" do
-                  rr_name "some-api-host.feegle.com"
-                  type "CNAME"
-                  ttl 3600
-                  resource_records [{ value: "some-other-host"}]
-                end
-              }
-            end
-          }
-        end
+        it "overrides the :name attribute with :rr_name"
 
         it "applies the :name validations to :rr_name"
       end

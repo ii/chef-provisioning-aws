@@ -529,17 +529,35 @@ module AWSDriver
     end
 
     def user_data
-      # TODO: Make this use HTTPS at some point.
       <<EOD
 <powershell>
 winrm quickconfig -q
 winrm set winrm/config/winrs '@{MaxMemoryPerShellMB="300"}'
 winrm set winrm/config '@{MaxTimeoutms="1800000"}'
-winrm set winrm/config/service '@{AllowUnencrypted="true"}'
-winrm set winrm/config/service/auth '@{Basic="true"}'
 
-netsh advfirewall firewall add rule name="WinRM 5985" protocol=TCP dir=in localport=5985 action=allow
 netsh advfirewall firewall add rule name="WinRM 5986" protocol=TCP dir=in localport=5986 action=allow
+
+$SourceStoreScope = 'LocalMachine'
+$SourceStorename = 'Remote Desktop'
+
+$SourceStore = New-Object  -TypeName System.Security.Cryptography.X509Certificates.X509Store  -ArgumentList $SourceStorename, $SourceStoreScope
+$SourceStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+
+$cert = $SourceStore.Certificates | Where-Object  -FilterScript {
+    $_.subject -like '*'
+}
+
+$DestStoreScope = 'LocalMachine'
+$DestStoreName = 'My'
+
+$DestStore = New-Object  -TypeName System.Security.Cryptography.X509Certificates.X509Store  -ArgumentList $DestStoreName, $DestStoreScope
+$DestStore.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+$DestStore.Add($cert)
+
+$SourceStore.Close()
+$DestStore.Close()
+
+winrm create winrm/config/listener?Address=*+Transport=HTTPS  `@`{Hostname=`"($certId)`"`;CertificateThumbprint=`"($cert.Thumbprint)`"`}
 
 net stop winrm
 sc config winrm start=auto
@@ -584,10 +602,17 @@ EOD
             instance.start
           end
         end
+        binding.pry
+        wait_until_ready_machine(action_handler, machine_spec, instance)
+      elsif machine_spec.reference['is_windows']
+        # windows needs running AND ready (available via console)
+        binding.pry
         wait_until_ready_machine(action_handler, machine_spec, instance)
       end
-1      # byebug
+      # byebug
+      binding.pry
       wait_for_transport(action_handler, machine_spec, machine_options)
+      binding.pry
       machine_for(machine_spec, machine_options, instance)
     end
 
@@ -944,7 +969,7 @@ EOD
         basic_auth_only: basic_auth_only,
         no_ssl_peer_verification: no_ssl_peer_verification,
       }
-
+      binding.pry
       if no_ssl_peer_verification or type != :ssl
         # =>  we won't verify certs
         pass
@@ -1005,6 +1030,7 @@ EOD
         winrm_options[:ssl_peer_fingerprint] = machine_spec.reference[:winrm_ssl_thumbprint]
       end
 
+      binding.pry
       Chef::Provisioning::Transport::WinRM.new("#{endpoint}", type, winrm_options, {})
       #binding.pry
       # in order for ssl to work, we need to tell ssl that it's ok that ssl_subject doesn't
@@ -1183,8 +1209,18 @@ EOD
     end
 
     def wait_until_ready_machine(action_handler, machine_spec, instance=nil)
-      wait_until_machine(action_handler, machine_spec, "be ready", instance) { |instance|
-        instance.state.name == "running"
+      wait_until_machine(action_handler, machine_spec, "be ready to use", instance) { |instance, machine_spec|
+        if instance.platform == "windows"
+          binding.pry
+          # windows can reboot a few times, so we need running AND console messages
+          instance.state.name == "running" &&
+            Base64.decode64(
+            instance.console_output.data.output
+          ).lines.grep(/Message: Windows is Ready to use/).count > 0
+        else
+          binding.pry
+          instance.state.name == "running"
+        end
       }
     end
 
@@ -1215,6 +1251,7 @@ EOD
       time_elapsed = 0
       sleep_time = 10
       max_wait_time = 120
+      binding.pry
       transport = transport_for(machine_spec, machine_options, instance)
       unless transport.available?
         if action_handler.should_perform_actions
@@ -1338,6 +1375,7 @@ EOD
     end
 
     def create_instance_and_reference(bootstrap_options, action_handler, machine_spec, machine_options)
+      binding.pry
       instance = ec2_resource.create_instances(bootstrap_options.to_hash)[0]
       # Make sure the instance is ready to be tagged
       instance.wait_until_exists
